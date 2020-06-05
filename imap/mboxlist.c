@@ -4648,7 +4648,7 @@ mboxlist_opensubs(const char *userid,
 
     r = cyrusdb_open(SUBDB, subsfname, flags, ret);
     if (r == CYRUSDB_OK) {
-        r = mboxlist_upgrade_subs(subsfname, ret);
+        r = mboxlist_upgrade_subs(userid, ret);
     }
     if (r != CYRUSDB_OK) {
         r = IMAP_IOERROR;
@@ -5212,6 +5212,7 @@ static int _check_rec_cb(void *rock,
 }
 
 struct upgrade_rock {
+    const char *userid;
     struct buf *namebuf;
     struct db *db;
     struct txn **tid;
@@ -5249,7 +5250,7 @@ EXPORTED int mboxlist_upgrade(int *upgraded)
     struct buf buf = BUF_INITIALIZER;
     struct db *backup = NULL;
     struct txn *tid = NULL;
-    struct upgrade_rock urock = { &buf, NULL, &tid };
+    struct upgrade_rock urock = { NULL, &buf, NULL, &tid };
     char *fname;
 
     if (upgraded) *upgraded = 0;
@@ -5343,7 +5344,7 @@ static int _upgrade_subs_cb(void *rock, const char *key, size_t keylen,
 
     buf_setmap(namebuf, key, keylen);
     dbname = mboxname_to_dbname(buf_cstring(namebuf));
-    mboxlist_dbname_to_key(dbname, strlen(dbname), namebuf);
+    mboxlist_dbname_to_key(dbname, strlen(dbname), urock->userid, namebuf);
     free(dbname);
 
     r = cyrusdb_store(urock->db,
@@ -5352,20 +5353,23 @@ static int _upgrade_subs_cb(void *rock, const char *key, size_t keylen,
     return (r == CYRUSDB_OK ? 0 : IMAP_IOERROR);
 }
 
-static int mboxlist_upgrade_subs(const char *subsfname, struct db **subs)
+static int mboxlist_upgrade_subs(const char *userid, struct db **subs)
 {
     int r, r2 = 0, do_upgrade = 1;
-    char *newsubsfname = NULL;
+    char *subsfname = NULL, *newsubsfname = NULL;
     struct buf buf = BUF_INITIALIZER;
     struct db *newsubs = NULL;
     struct txn *tid = NULL;
-    struct upgrade_rock urock = { &buf, NULL, &tid };
+    struct upgrade_rock urock = { userid, &buf, NULL, &tid };
 
     /* check if we need to upgrade */
     r = cyrusdb_foreach(*subs, "", 0, NULL, _check_subs_cb, &do_upgrade, NULL);
 
     if (r != CYRUSDB_OK && r != CYRUSDB_DONE) return r;
     if (!do_upgrade) return 0;
+
+    /* create existing db filename */
+    subsfname = user_hash_subs(userid);
 
     /* create new db file name */
     buf_setcstr(&buf, subsfname);
@@ -5429,6 +5433,7 @@ static int mboxlist_upgrade_subs(const char *subsfname, struct db **subs)
 
     unlink(newsubsfname);
     free(newsubsfname);
+    free(subsfname);
     buf_free(&buf);
 
     return r;
