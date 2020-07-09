@@ -785,10 +785,6 @@ static Xapian::Query *make_stem_match_query(const xapian_db_t *db,
 
     if (tg_stem_strategy != Xapian::TermGenerator::STEM_NONE) {
 
-        // STEM_SOME doesn't work for terms starting with upper case,
-        // which will break for languages such as German. We also can't use
-        // STEM_ALL_Z, as this would force-stem phrase queries. Best guess
-        // is to lower case the query and risk stemming proper nouns.
         std::string lmatch(match);
         std::transform(lmatch.begin(), lmatch.end(), lmatch.begin(), ::tolower);
 
@@ -802,7 +798,7 @@ static Xapian::Query *make_stem_match_query(const xapian_db_t *db,
         if (!db->default_stopper || !(*db->default_stopper)(lmatch)) {
             db->parser->set_stemmer(*db->default_stemmer);
             db->parser->set_stopper(db->default_stopper);
-            db->parser->set_stemming_strategy(Xapian::QueryParser::STEM_SOME);
+            db->parser->set_stemming_strategy(Xapian::QueryParser::STEM_ALL_Z);
             q |= db->parser->parse_query(lmatch, flags, prefix);
         }
 
